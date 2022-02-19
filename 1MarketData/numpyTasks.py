@@ -1,3 +1,4 @@
+import enum
 import numpy as np
 
 #1 suma 2 vektoriu
@@ -20,7 +21,6 @@ print(a)
 
 ar = a.clip(max=0)
 print(ar)
-np.where(a > 0) # throws out the zeros alltogether
 
 #3 ismetimas > 6
 a = np.random.randint(low=1, high=10, size=10)
@@ -42,8 +42,8 @@ print(a)
 for i, val in enumerate(a[:-1]):
     if a[i] == a[i+1]:
         print(f"Next to each other indexes: {i} and {i+1}. Element values at these indexes: {a[i]}")
-        
-#TODO write a single liner for this
+
+a[np.asarray(np.where(np.ediff1d(a) == 0)) + 1] #gives back elements since we take indices from np.where. asarray is not needed if we don't want to increment all indices to get the second same value element
 
 #5 radimas a > b
 a = np.random.randn(10)
@@ -56,7 +56,7 @@ for i in range(len(a)):
 
 list(zip(a[np.where(a > b)], b[np.where(a > b)]))
 
-#6 elementu perstumimas vektoriuje pakartojant paskutni
+#6 elementu perstumimas vektoriuje pakartojant paskutini
 a = np.random.randint(low=1, high=10, size=10)
 print(a)
 for i in range(1, len(a)):
@@ -76,3 +76,31 @@ print(a)
 
 print(np.flip(a))
 
+#8 kas antro elemento uznulinimas
+a = np.random.randint(low=1, high=10, size=10)
+print(a)
+for i in range(0, len(a)-1, 2):
+    a[i+1] = 0
+print(a)
+
+a[1::2] = 0
+
+#9 rasti matricos eiluciu vidurkius, stulpeliu vidurkius
+a = np.random.randn(10, 20)
+for i in range(len(a[:, 0])):
+    mean = 0
+    print(a[i])
+    for j, val in enumerate(a[i]):
+        mean += val
+    print(mean/len(a[i]))
+
+a.mean(0) #axis 0 is columns
+a.mean(1) #axis 1 is rows
+
+#10 gauti diagonalinius elementus
+a = np.random.randint(10, size=(10, 10))
+print(a)
+for i, _ in enumerate(a[0]):
+    print(a[i, i])
+
+a[np.nonzero(a*np.eye(10,10))]
