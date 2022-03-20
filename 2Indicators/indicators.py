@@ -3,13 +3,6 @@ import matplotlib.pyplot as plt
 import yfinance as yf
 import numpy as np
 
-def plot(df_to_plot, title, ylabel, xlabel):
-    df_to_plot.plot()
-    plt.title(title)
-    plt.ylabel(ylabel)
-    plt.xlabel(xlabel)
-    # plt.show()
-
 
 # WMA
 def WMA_calc(data, timePeriod):
@@ -28,12 +21,18 @@ def WMA_calc(data, timePeriod):
 
 def plot_WMA(df_price_to_plot, WMA_period, ticker):
     df_WMA = WMA_calc(df_price_to_plot, WMA_period)
+    plt.figure(figsize=(12, 5))
     plt.plot(df_price_to_plot)
     plt.plot(df_WMA)
     plt.title(ticker + " price with WMA")
     plt.ylabel("Price")
     plt.xlabel("Time")
     plt.show()
+
+
+df = yf.download('AAPL', period='1y', interval="1d")
+plot_WMA(df.Close, 20, "AAPL")
+
 
 
 #MFI
@@ -45,6 +44,7 @@ def MFI_calc(data, timePeriod):
     negativeMoneyFlow = np.zeros(len(moneyFlow))
     positiveMoneyFlow = np.zeros(len(moneyFlow))
 
+    #could probably do this with shift
     negMoneyFlowIndices = np.where(np.ediff1d(typicalPrice) < 0)[0] + 1 # indexes where current typical price was lower than the day before
     posMoneyFlowIndices = np.where(np.ediff1d(typicalPrice) > 0)[0] + 1 # indexes where current typical price was higher than the day before
 
@@ -55,60 +55,79 @@ def MFI_calc(data, timePeriod):
         negMFforPeriod = negativeMoneyFlow[i:timePeriod+i].sum() # instead of slicing I could throw out last and add in next
         posMFforPeriod = positiveMoneyFlow[i:timePeriod+i].sum()
 
-        moneyRatio = posMFforPeriod/negMFforPeriod
+        moneyRatio = negMFforPeriod/posMFforPeriod #flipped values from original formula
 
-        MFI[timePeriod+i-1] = 100 - (100/(1+moneyRatio))
+        MFI[timePeriod+i-1] = 100/(1+moneyRatio)
 
+    print(type(MFI))
     MFI = pd.Series(MFI)
     MFI.index = data.index
 
     return MFI[timePeriod-1:]
 
 
-def plot_MFI(df_to_plot, MFI_period, ticker):
-    df_MFI = MFI_calc(df, MFI_period)
-    fig, ax = plt.subplots(2)
-    ax[0].plot(df_to_plot.Close, 'r')
-    ax[1].plot(df_MFI, 'b')
-    # fig.title(ticker + " price with WMA")
-    # plt.ylabel("Price")
-    # plt.xlabel("Time") #TODO figure out how to format this
+def get_MFI_bound(df, bound):
+    boundArray = np.repeat(bound, len(df))
+    boundSeries = pd.Series(boundArray)
+    boundSeries.index = df.index
+    return boundSeries
+
+
+def plot_MFI(df_to_plot, MFI_period, ticker, MFI_upper, MFI_lower):
+    df_MFI = MFI_calc(df_to_plot, MFI_period)
+    MFI_up = get_MFI_bound(df_to_plot, MFI_upper)
+    MFI_low = get_MFI_bound(df_to_plot, MFI_lower)
+    fig, ax = plt.subplots(2, figsize=(12, 5), gridspec_kw={'height_ratios': [3, 1]}, sharex=True)
+    ax[0].plot(df_to_plot.Close, color='blue')
+    ax[0].set_title(ticker + " price with MFI")
+    ax[0].set_ylabel("Price")
+    ax[0].grid()
+
+    ax[1].plot(df_MFI, color='black')
+    ax[1].plot(MFI_up, color='grey')
+    ax[1].plot(MFI_low, color='grey')
+    ax[1].set_ylabel("MFI")
+    ax[1].set_xlabel("Time")
+    ax[1].grid()
     plt.show()
 
 
-df = yf.download('AAPL', period='5y', interval="1d")
-plot_WMA(df.Close, 20, "APPL")
-plot_MFI(df, 14, "APPL")
+plot_MFI(df, 14, "AAPL", 80, 20)
 
 
-fig, ax = plt.subplots(2)  # figura viena, asiu gali buti daug
-#fig, ax = plt.subplots(2, 3, sharex=True, sharey=True) # sujungtos visos asys. Naudinga darant zoom in
-ax[0].plot(df.Close["2018-02-24":"2022-02-24"], 'r')
-ax[1].plot(WMA_calc(df.Close["2018-02-24":"2022-02-24"], 20), 'g')
-plt.show()
 
 #Keltner channel
+def Keltner_calc(data, kc_multiplier, timePeriod):
+    typicalPrice = (data.High + data.Low + data.Close)/3
 
-headDF = df[:50]
-
-def Keltner_calc(data, kc_multiplier, kc_timePeriod, atr_timePeriod):
     tr1 = data.High - data.Low
     tr2 = abs(data.High - data.Close.shift())
-    tr3 = abs(data.Low - data.Close.shift())
+    tr3 = abs(data.Close.shift() - data.Low)
     frames = [tr1, tr2, tr3]
     tr = pd.concat(frames, axis=1).max(axis=1)
-    atr = tr.ewm(alpha=1/atr_timePeriod).mean()
+    atr = tr.ewm(span=timePeriod).mean()
 
-    kc_middle = data.Close.ewm(kc_timePeriod).mean()
-    kc_upper = data.Close.ewm(kc_timePeriod).mean() + kc_multiplier * atr
-    kc_lower = data.Close.ewm(kc_timePeriod).mean() - kc_multiplier * atr
+    kc_middle = typicalPrice.ewm(span=timePeriod).mean()
+    print(type(kc_middle))
+    kc_upper = kc_middle + (kc_multiplier * atr)
+    kc_lower = kc_middle - (kc_multiplier * atr)
 
-    return kc_middle, kc_upper, kc_lower
+    return kc_middle[1:], kc_upper[1:], kc_lower[1:]
 
 
-middle, upper, lower = Keltner_calc(df["2021-03-17":], 2, 20, 10)
-plt.plot(df.Close["2021-03-17":])
-plt.plot(middle)
-plt.plot(upper)
-plt.plot(lower)
-plt.show()
+def plot_Keltner(df_to_plot, ticker, kc_shift, period):
+    middle, upper, lower = Keltner_calc(df_to_plot, kc_shift, period)
+    plt.figure(figsize=(12, 5))
+    plt.plot(df_to_plot.Close, color='blue')
+    plt.plot(middle, color='black')
+    plt.plot(upper, color='green')
+    plt.plot(lower, color='red')
+    plt.fill_between(df_to_plot[1:].index, upper, lower, color='grey', alpha=0.3)
+    plt.title(ticker + " price with Keltner channel")
+    plt.ylabel("Price")
+    plt.xlabel("Time")
+    plt.grid()
+    plt.show()
+
+
+plot_Keltner(df, 'AAPL', 2, 20)
