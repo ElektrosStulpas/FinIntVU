@@ -68,9 +68,8 @@ def MFI_calc(data, timePeriod):
 
         MFI[timePeriod+i-1] = 100/(1+moneyRatio)
 
-    print(type(MFI))
     MFI = pd.Series(MFI)
-    MFI.index = data.index
+    MFI.index = data.index #it might be that this doesn't do anything :)
 
     return MFI[timePeriod-1:]
 
