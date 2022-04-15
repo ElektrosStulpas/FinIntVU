@@ -1,0 +1,4 @@
+Take profit/stop loss
+Account for trading fees
+Draw PnL together with Keltner, add legend
+Double check if everything lines up by appending all data to a dataframe
