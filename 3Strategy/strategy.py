@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import yfinance as yf
 import numpy as np
+import seaborn as sns
 
 #data load up
 df_AAPL = yf.download('AAPL', period='10y', interval="1d")
@@ -135,19 +136,29 @@ plot_Keltner_with_Profit(df_AAPL, "AAPL", KCchannels, signal_indices, profit.cum
 def annual_sharpe(profit, n = 253):
     return np.sqrt(n) * profit.mean() / profit.std()
 
-annual_sharpe(profit, 253)
+def testing_parameters(df_to_test, test_range):
+    rng = np.random.default_rng()
+    optim_results = []
+    for i in range(test_range):
+        keltner_time = rng.integers(1, 100)
+        keltner_multiplier = (rng.random()+0.2)*5
+        profit, _, _ = Keltner_strat(df_to_test, keltner_multiplier, keltner_time)
+        profit_over_time = profit.cumsum()
+        # if profit_over_time[-1] == 0:
+        #     continue
+        sharpe = annual_sharpe(profit)
+        optim_results.append([keltner_time, keltner_multiplier, profit_over_time[-1], sharpe])
 
-rng = np.random.default_rng()
-optim_results = []
-for i in range(10000):
-    keltner_time = rng.integers(1, 70)
-    keltner_multiplier = (rng.random()+0.01)*5
-    profit, _, _ = Keltner_strat(df_AAPL.head(), keltner_multiplier, keltner_time)
-    profit_over_time = profit.cumsum()
-    if profit_over_time[-1] == 0:
-        continue
-    sharpe = annual_sharpe(profit)
-    optim_results.append([keltner_time, keltner_multiplier, profit_over_time[-1], sharpe])
+    results_df = pd.DataFrame(optim_results, columns=['KC Time', 'KC Multiplier', 'Profit', 'Sharpe'])
+    return results_df
 
-results_df = pd.DataFrame(optim_results)
-print("idk, smth")
+sim_results = testing_parameters(df_AAPL, 100)
+
+table = sim_results.pivot(index='KC Multiplier', columns='KC Time', values='Sharpe')
+fig, ax0 = plt.subplots(nrows=1)
+im = ax0.pcolormesh(table)
+fig.colorbar(im, ax=ax0)
+plt.yticks(np.arange(0,len(table.index))+0.5, table.index)
+plt.ylabel('p2')
+plt.xticks(np.arange(0,len(table.columns.values))+0.5, table.columns.values)
+plt.xlabel('p1')
