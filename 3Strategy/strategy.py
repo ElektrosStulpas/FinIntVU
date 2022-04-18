@@ -2,12 +2,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import yfinance as yf
 import numpy as np
-import seaborn as sns
 
 #data load up
 df_AAPL = yf.download('AAPL', period='10y', interval="1d")
-df_INTC = yf.download('INTC', period='1y', interval="1d")
-df_MSFT = yf.download('MSFT', period='1y', interval="1d")
+df_INTC = yf.download('INTC', period='10y', interval="1d")
+df_MSFT = yf.download('MSFT', period='10y', interval="1d")
 
 #Keltner channel
 # either trend trade where follow candles outside bounds
@@ -102,6 +101,7 @@ def plot_Keltner_with_Profit(df_to_plot, ticker, KCchannels, signal_indices, pro
     ax[1].grid()
     plt.show()
 
+
 def Keltner_strat(df_to_strat, keltner_multiplier, keltner_time):
     KCchannels = Keltner_calc(df_to_strat, keltner_multiplier, keltner_time)
     position, SLTP_indices = position_calc(df_to_strat, KCchannels, 0.2, 0.5)
@@ -112,7 +112,7 @@ def Keltner_strat(df_to_strat, keltner_multiplier, keltner_time):
     return profit, KCchannels, (buy_index, sell_index, SLTP_indices)
 
 
-profit, KCchannels, signal_indices = Keltner_strat(df_AAPL, 0.103058, 1)
+profit, KCchannels, signal_indices = Keltner_strat(df_AAPL, 2, 20)
 plot_Keltner_with_Profit(df_AAPL, "AAPL", KCchannels, signal_indices, profit.cumsum())
 
 # df_AAPL = df_AAPL[1:]
@@ -136,29 +136,75 @@ plot_Keltner_with_Profit(df_AAPL, "AAPL", KCchannels, signal_indices, profit.cum
 def annual_sharpe(profit, n = 253):
     return np.sqrt(n) * profit.mean() / profit.std()
 
-def testing_parameters(df_to_test, test_range):
+
+def testing_parameters_random(df_to_test, test_range):
     rng = np.random.default_rng()
     optim_results = []
     for i in range(test_range):
         keltner_time = rng.integers(1, 100)
-        keltner_multiplier = (rng.random()+0.2)*5
+        keltner_multiplier = round((rng.random()+0.1)*4, 2)
         profit, _, _ = Keltner_strat(df_to_test, keltner_multiplier, keltner_time)
         profit_over_time = profit.cumsum()
-        # if profit_over_time[-1] == 0:
-        #     continue
+        if profit_over_time[-1] == 0:
+            continue
         sharpe = annual_sharpe(profit)
-        optim_results.append([keltner_time, keltner_multiplier, profit_over_time[-1], sharpe])
+        optim_results.append([keltner_time, keltner_multiplier, profit_over_time[-1], round(sharpe, 2)])
 
     results_df = pd.DataFrame(optim_results, columns=['KC Time', 'KC Multiplier', 'Profit', 'Sharpe'])
     return results_df
 
-sim_results = testing_parameters(df_AAPL, 100)
 
-table = sim_results.pivot(index='KC Multiplier', columns='KC Time', values='Sharpe')
-fig, ax0 = plt.subplots(nrows=1)
-im = ax0.pcolormesh(table)
-fig.colorbar(im, ax=ax0)
-plt.yticks(np.arange(0,len(table.index))+0.5, table.index)
-plt.ylabel('p2')
-plt.xticks(np.arange(0,len(table.columns.values))+0.5, table.columns.values)
-plt.xlabel('p1')
+def testing_parameters_brute(df_to_test, kc_time_start, kc_time_stop, kc_multi_start, kc_multi_stop):
+    # kc_multi_gen = (x/100 for x in range(kc_multi_start, kc_multi_stop, 5)) # for some reason using named generator in for it uses it up once and doesn't refresh from the start
+    optim_results = []
+
+    for keltner_time in range(kc_time_start, kc_time_stop+1):
+        for keltner_multiplier in (x/100 for x in range(kc_multi_start, kc_multi_stop+1, 5)):
+            profit, _, _ = Keltner_strat(df_to_test, keltner_multiplier, keltner_time)
+            profit_over_time = profit.cumsum()
+            if profit_over_time[-1] == 0:
+                continue
+            sharpe = annual_sharpe(profit)
+            optim_results.append([keltner_time, keltner_multiplier, profit_over_time[-1], round(sharpe, 2)])
+
+    results_df = pd.DataFrame(optim_results, columns=['KC Time', 'KC Multiplier', 'Profit', 'Sharpe'])
+    return results_df
+
+
+def sim_results_heatmap(df_to_draw, x_axis_col_name, y_axis_col_name, values_col_name):
+    table = df_to_draw.pivot(index=y_axis_col_name, columns=x_axis_col_name, values=values_col_name)
+    fig, ax0 = plt.subplots(figsize=(14, 8))
+    im = ax0.pcolormesh(table)
+    fig.colorbar(im, ax=ax0)
+    plt.yticks(np.arange(0,len(table.index))+0.5, table.index)
+    plt.ylabel(y_axis_col_name)
+    plt.xticks(np.arange(0,len(table.columns.values))+0.5, table.columns.values)
+    plt.xlabel(x_axis_col_name)
+    plt.show()
+
+
+def profit_before_and_after(df_to_calc, KC_params_before, KC_params_after):
+    keltner_multiplier_before, keltner_time_before = KC_params_before
+    keltner_multiplier_after, keltner_time_after = KC_params_after
+
+    profit_before, _, _ = Keltner_strat(df_to_calc, keltner_multiplier_before, keltner_time_before)
+    profit_after, _, _ = Keltner_strat(df_to_calc, keltner_multiplier_after, keltner_time_after)
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    before_optim, = ax.plot(profit_before.cumsum(), color='blue', label="Before optimization")
+    after_optim, = ax.plot(profit_after.cumsum(), color='purple', label="After optimization")
+    ax.legend(handles = [before_optim, after_optim])
+    ax.set_ylabel("Profit")
+    ax.set_xlabel("Time")
+    ax.grid()
+    plt.show()
+
+
+# sim_results = testing_parameters_random(df_AAPL, 10000)
+# table = sim_results[:30].pivot(index='KC Multiplier', columns='KC Time', values='Sharpe')
+# sim_results.sort_values('Sharpe', ascending=False, inplace=True)
+
+sim_results = testing_parameters_brute(df_AAPL, 1, 50, 0, 200)
+sim_results_heatmap(sim_results, 'KC Time', 'KC Multiplier', 'Sharpe')
+
+profit_before_and_after(df_AAPL, (2, 20), (0.1, 2))
