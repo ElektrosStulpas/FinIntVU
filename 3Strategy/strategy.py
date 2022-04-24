@@ -28,12 +28,15 @@ def Keltner_calc(data, kc_multiplier, timePeriod):
     return kc_middle[1:], kc_upper[1:], kc_lower[1:]
 
 
-def position_calc(df_to_calc, KCchannels, stop_loss, take_profit):
+def position_calc(df_to_calc, KCchannels, SLTP):
+    stop_loss, take_profit = SLTP
     KC_middle, KC_upper, KC_lower = KCchannels
-    position = np.zeros(len(df_to_calc))
+    df_len = len(df_to_calc[1:])
+    position = np.zeros(df_len)
     SLTP_indices = []
     # since we're doing close, this means we're executing at end of day
     for i, today_price in enumerate(df_to_calc[1:].Close):
+        if i+1 >= df_len: continue
         if position[i] == 0: #today position was none
             if today_price > KC_upper[i]:
                 position[i+1] = 1 # if price passes upper band, uptrend expected, so we buy
@@ -65,7 +68,7 @@ def position_calc(df_to_calc, KCchannels, stop_loss, take_profit):
                 position[i+1] = position[i] # continue position
             continue
 
-    return position[1:], np.array(SLTP_indices, dtype=np.int64)+1
+    return position, np.array(SLTP_indices, dtype=np.int64)+1
 
 
 def PnL_calc(df_to_calc, position, buy_indices, sell_indice, fees):
@@ -79,21 +82,21 @@ def PnL_calc(df_to_calc, position, buy_indices, sell_indice, fees):
 def plot_Keltner_with_Profit(df_to_plot, ticker, KCchannels, signal_indices, profit):
     middle, upper, lower = KCchannels
     buy_index, sell_index, SLTP_index = signal_indices
-    fig, ax = plt.subplots(2, figsize=(12, 5), gridspec_kw={'height_ratios': [3, 2]}, sharex=True)
+    fig, ax = plt.subplots(2, figsize=(14, 7), gridspec_kw={'height_ratios': [3, 2]}, sharex=True)
     close_line, = ax[0].plot(df_to_plot.Close, color='blue', label="Close price")
-    ax[0].plot(middle, color='black')
-    ax[0].plot(upper, color='black')
-    ax[0].plot(lower, color='black')
+    ewm_line, = ax[0].plot(middle, color='orange', label="Moving average")
+    upper_line, = ax[0].plot(upper, color='green', label="Upper band")
+    lower_line, = ax[0].plot(lower, color='red', label="Lower band")
     ax[0].fill_between(df_to_plot[1:].index, upper, lower, color='grey', alpha=0.3)
 
     buy_marker = ax[0].scatter(df_to_plot.index[buy_index], df_to_plot.Close[buy_index], marker='^', color='green', label='Buy signal')
     sell_marker = ax[0].scatter(df_to_plot.index[sell_index], df_to_plot.Close[sell_index], marker='v', color='red', label='Sell signal')
-    SLTP_marker = ax[0].scatter(df_to_plot.index[SLTP_index], df_to_plot.Close[SLTP_index], marker='X', color='purple', label='SLTP signal', alpha=0.5)
+    SLTP_marker = ax[0].scatter(df_to_plot.index[SLTP_index], df_to_plot.Close[SLTP_index], marker='X', color='purple', label='SLTP signal', alpha=0.5, s=70)
 
     ax[0].set_title(ticker + " price with Keltner channel")
     ax[0].set_ylabel("Price")
     ax[0].grid()
-    ax[0].legend(handles = [close_line, buy_marker, sell_marker, SLTP_marker])
+    ax[0].legend(handles = [close_line, ewm_line, upper_line, lower_line, buy_marker, sell_marker, SLTP_marker])
 
     ax[1].plot(profit, color='black')
     ax[1].set_ylabel("Profit")
@@ -102,27 +105,30 @@ def plot_Keltner_with_Profit(df_to_plot, ticker, KCchannels, signal_indices, pro
     plt.show()
 
 
-def Keltner_strat(df_to_strat, keltner_multiplier, keltner_time):
+def Keltner_strat(df_to_strat, keltner_multiplier, keltner_time, SLTP, fees):
     KCchannels = Keltner_calc(df_to_strat, keltner_multiplier, keltner_time)
-    position, SLTP_indices = position_calc(df_to_strat, KCchannels, 0.2, 0.5)
+    position, SLTP_indices = position_calc(df_to_strat, KCchannels, SLTP)
     shift_position = position
     buy_index = np.where((position[1:] != shift_position[:-1]) & (position[1:] > shift_position[:-1]))[0] + 1
     sell_index = np.where((position[:-1] != shift_position[1:]) & (position[:-1] > shift_position[1:]))[0] + 1
-    profit = PnL_calc(df_to_strat, position, buy_index, sell_index, 0.1)
+    profit = PnL_calc(df_to_strat, position, buy_index, sell_index, fees)
     return profit, KCchannels, (buy_index, sell_index, SLTP_indices)
 
 
-profit, KCchannels, signal_indices = Keltner_strat(df_AAPL, 2, 20)
+profit, KCchannels, signal_indices = Keltner_strat(df_AAPL, 2, 20, SLTP=(0.1, 0.5), fees=0.1)
 plot_Keltner_with_Profit(df_AAPL, "AAPL", KCchannels, signal_indices, profit.cumsum())
 
-# df_AAPL = df_AAPL[1:]
-# df_AAPL['KC_middle'] = middle[1:]
-# df_AAPL['KC_upper'] = upper[1:]
-# df_AAPL['KC_lower'] = lower[1:]
-# df_AAPL['position'] = position
-# df_AAPL['price diff'] = (df_AAPL.Close).diff()
-# df_AAPL['profit'] = profit
-# df_AAPL
+middle, upper, lower = KCchannels
+position, SLTP_indices = position_calc(df_AAPL, KCchannels, SLTP=(0.1, 0.5))
+
+df_AAPL = df_AAPL[1:]
+df_AAPL['KC_middle'] = middle[1:]
+df_AAPL['KC_upper'] = upper[1:]
+df_AAPL['KC_lower'] = lower[1:]
+df_AAPL['position'] = position
+df_AAPL['price diff'] = (df_AAPL.Close).diff()
+df_AAPL['profit'] = profit
+df_AAPL
 
 # series = np.array([0, 1, 1, 1, 0, 0])
 # yesterseries = series
@@ -143,7 +149,7 @@ def testing_parameters_random(df_to_test, test_range):
     for i in range(test_range):
         keltner_time = rng.integers(1, 100)
         keltner_multiplier = round((rng.random()+0.1)*4, 2)
-        profit, _, _ = Keltner_strat(df_to_test, keltner_multiplier, keltner_time)
+        profit, _, _ = Keltner_strat(df_to_test, keltner_multiplier, keltner_time, SLTP=(0.1, 0.5), fees=0.1)
         profit_over_time = profit.cumsum()
         if profit_over_time[-1] == 0:
             continue
@@ -160,7 +166,7 @@ def testing_parameters_brute(df_to_test, kc_time_start, kc_time_stop, kc_multi_s
 
     for keltner_time in range(kc_time_start, kc_time_stop+1):
         for keltner_multiplier in (x/100 for x in range(kc_multi_start, kc_multi_stop+1, 5)):
-            profit, _, _ = Keltner_strat(df_to_test, keltner_multiplier, keltner_time)
+            profit, _, _ = Keltner_strat(df_to_test, keltner_multiplier, keltner_time, SLTP=(0.15, 0.5), fees=0.1)
             profit_over_time = profit.cumsum()
             if profit_over_time[-1] == 0:
                 continue
@@ -183,12 +189,12 @@ def sim_results_heatmap(df_to_draw, x_axis_col_name, y_axis_col_name, values_col
     plt.show()
 
 
-def profit_before_and_after(df_to_calc, KC_params_before, KC_params_after):
+def profit_before_and_after(df_to_calc, KC_params_before, KC_params_after, SLTP, fees):
     keltner_multiplier_before, keltner_time_before = KC_params_before
     keltner_multiplier_after, keltner_time_after = KC_params_after
 
-    profit_before, _, _ = Keltner_strat(df_to_calc, keltner_multiplier_before, keltner_time_before)
-    profit_after, _, _ = Keltner_strat(df_to_calc, keltner_multiplier_after, keltner_time_after)
+    profit_before, _, _ = Keltner_strat(df_to_calc, keltner_multiplier_before, keltner_time_before, SLTP, fees)
+    profit_after, _, _ = Keltner_strat(df_to_calc, keltner_multiplier_after, keltner_time_after, SLTP, fees)
 
     fig, ax = plt.subplots(figsize=(12, 5))
     before_optim, = ax.plot(profit_before.cumsum(), color='blue', label="Before optimization")
@@ -201,10 +207,12 @@ def profit_before_and_after(df_to_calc, KC_params_before, KC_params_after):
 
 
 # sim_results = testing_parameters_random(df_AAPL, 10000)
-# table = sim_results[:30].pivot(index='KC Multiplier', columns='KC Time', values='Sharpe')
 # sim_results.sort_values('Sharpe', ascending=False, inplace=True)
+# sim_results = sim_results[:50]
+# sim_results.drop_duplicates(subset=['KC Multiplier'], keep='first', inplace=True)
+# sim_results_heatmap(sim_results, 'KC Time', 'KC Multiplier', 'Sharpe')
 
-sim_results = testing_parameters_brute(df_AAPL, 1, 50, 0, 200)
+sim_results = testing_parameters_brute(df_AAPL, 10, 50, 250, 550)
 sim_results_heatmap(sim_results, 'KC Time', 'KC Multiplier', 'Sharpe')
 
-profit_before_and_after(df_AAPL, (2, 20), (0.1, 2))
+profit_before_and_after(df_AAPL, KC_params_before=(2, 20), KC_params_after=(3.1, 20), SLTP=(0.15, 0.5), fees=0.1)
